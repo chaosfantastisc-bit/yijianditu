@@ -1,0 +1,25 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── PyInstaller 构建产物 ──
+build/
+dist/
+*.spec.bak
+
+# ── 二进制 / 日志 ──
+*.exe
+*.log
+
+# ── 第三方参考克隆（本项目不直接使用，仅作思路参考）──
+geo-downloader/
+
+# ── 内部工作记忆 ──
+.workbuddy/
+
+# ── 系统 ──
+Thumbs.db
+.DS_Store
