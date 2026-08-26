@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>一键地图 · 影像下载转 DXF</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="panel">
+      <header class="brand">
+        <img class="brand-logo" src="/static/logo.svg" alt="一键地图" />
+        <div class="brand-text">
+          <div class="logo">一键地图</div>
+          <div class="sub">在线影像 → CGCS2000 · DXF + JPG</div>
+        </div>
+      </header>
+
+      <section class="block">
+        <label class="lbl">影像源</label>
+        <div id="sourceTabs" class="tabs"></div>
+      </section>
+
+      <section class="block" id="crsBlock">
+        <label class="lbl">坐标系（自动按 3°带分带）</label>
+        <div class="tabs" id="crsModeTabs">
+          <div class="tab on" data-mode="zone">加带号 Zone</div>
+          <div class="tab" data-mode="cm">不加带号 CM</div>
+        </div>
+        <div class="crs-info" id="crsInfo">选择范围后自动识别</div>
+        <div class="crs-manual" id="crsManual" style="display:none">
+          <label class="lbl mt"><span><input type="checkbox" id="cmManualChk" /> 手动设置中央子午线</span></label>
+          <div class="dms">
+            <input id="cmDeg" type="number" step="1" placeholder="度°" disabled />
+            <input id="cmMin" type="number" step="1" placeholder="分′" disabled />
+            <input id="cmSec" type="number" step="0.01" placeholder="秒″" disabled />
+          </div>
+        </div>
+        <div class="hint" id="crsNote"></div>
+      </section>
+
+      <section class="block" id="tkSection" style="display:none">
+        <label class="lbl">天地图 Key</label>
+        <input id="tkInput" type="text" class="text" placeholder="留空则使用内置公共key" />
+        <div class="hint">默认用公共key，如天地图不可用，请自己申请key填入</div>
+      </section>
+
+      <section class="block">
+        <label class="lbl">下载级别 <span id="zoomVal" class="tag">17</span></label>
+        <input id="zoom" type="range" min="1" max="19" value="17" />
+        <div class="hint" id="zoomHint">地面分辨率约 —</div>
+      </section>
+
+      <section class="block">
+        <label class="lbl">选择范围</label>
+        <div class="range-grid">
+          <div class="cell"><span>左下 经度</span><input id="minLon" type="number" step="0.000001" placeholder="min lon" /></div>
+          <div class="cell"><span>左下 纬度</span><input id="minLat" type="number" step="0.000001" placeholder="min lat" /></div>
+          <div class="cell"><span>右上 经度</span><input id="maxLon" type="number" step="0.000001" placeholder="max lon" /></div>
+          <div class="cell"><span>右上 纬度</span><input id="maxLat" type="number" step="0.000001" placeholder="max lat" /></div>
+        </div>
+        <div class="row-btns">
+          <button id="drawBtn" class="btn ghost">🖱 在地图上框选</button>
+          <button id="clearBtn" class="btn ghost small">清除</button>
+        </div>
+      </section>
+
+      <section class="block estimate" id="estimate">
+        <div class="est-row"><span>瓦片数</span><b id="estTiles">—</b></div>
+        <div class="est-row"><span>输出像素</span><b id="estPixels">—</b></div>
+        <div class="est-row"><span>预计下载</span><b id="estSize">—</b></div>
+        <div class="est-warn" id="estWarn"></div>
+      </section>
+
+      <section class="block">
+        <label class="lbl">文件名（可选）</label>
+        <input id="fileName" type="text" placeholder="留空自动命名" class="text" />
+        <label class="lbl mt">输出目录</label>
+        <div class="row-btns">
+          <input id="outDir" type="text" class="text grow" />
+          <button id="openDirBtn" class="btn ghost small" title="打开目录">📂</button>
+        </div>
+      </section>
+
+      <section class="block">
+        <button id="startBtn" class="btn primary big">开始下载</button>
+        <button id="cancelBtn" class="btn danger big" style="display:none">取消</button>
+      </section>
+
+      <section class="block progress-block" id="progressBlock" style="display:none">
+        <div class="pbar"><div id="pbarFill" class="pbar-fill"></div></div>
+        <div class="pmsg" id="pmsg">准备中…</div>
+        <pre id="plog" class="plog"></pre>
+      </section>
+
+      <section class="block result-block" id="resultBlock" style="display:none">
+        <div class="ok-title">✅ 完成</div>
+        <div class="res-line" id="resInfo"></div>
+        <button id="resOpenBtn" class="btn primary">打开输出文件夹</button>
+      </section>
+
+      <footer class="foot" id="foot"></footer>
+    </aside>
+
+    <main id="mapWrap">
+      <div id="map"></div>
+      <div id="mapTip" class="map-tip">在地图上按住鼠标拖拽即可框选下载范围</div>
+    </main>
+  </div>
+
+  <script src="/static/vendor/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
