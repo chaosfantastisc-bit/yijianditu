@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="一键地图">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16263d"/>
+      <stop offset="1" stop-color="#0a1524"/>
+    </linearGradient>
+    <linearGradient id="pin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ce0a6"/>
+      <stop offset="1" stop-color="#22a874"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#3fd68c" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#3fd68c" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="round">
+      <rect x="10" y="10" width="236" height="236" rx="52"/>
+    </clipPath>
+  </defs>
+
+  <rect x="10" y="10" width="236" height="236" rx="52" fill="url(#bg)" stroke="#2c4a6e" stroke-width="2"/>
+
+  <g clip-path="url(#round)">
+    <g stroke="#9fd9ff" stroke-opacity="0.10" stroke-width="2">
+      <line x1="42"  y1="0" x2="42"  y2="256"/>
+      <line x1="74"  y1="0" x2="74"  y2="256"/>
+      <line x1="106" y1="0" x2="106" y2="256"/>
+      <line x1="138" y1="0" x2="138" y2="256"/>
+      <line x1="170" y1="0" x2="170" y2="256"/>
+      <line x1="202" y1="0" x2="202" y2="256"/>
+      <line x1="234" y1="0" x2="234" y2="256"/>
+    </g>
+    <g stroke="#9fd9ff" stroke-opacity="0.10" stroke-width="2">
+      <line x1="0" y1="42"  x2="256" y2="42"/>
+      <line x1="0" y1="74"  x2="256" y2="74"/>
+      <line x1="0" y1="106" x2="256" y2="106"/>
+      <line x1="0" y1="138" x2="256" y2="138"/>
+      <line x1="0" y1="170" x2="256" y2="170"/>
+      <line x1="0" y1="202" x2="256" y2="202"/>
+      <line x1="0" y1="234" x2="256" y2="234"/>
+    </g>
+    <circle cx="128" cy="104" r="82" fill="url(#glow)"/>
+  </g>
+
+  <path d="M128 188 C 92 150 80 126 80 102 C 80 74 102 54 128 54 C 154 54 176 74 176 102 C 176 126 164 150 128 188 Z" fill="url(#pin)"/>
+  <circle cx="128" cy="102" r="20" fill="#0a1524"/>
+  <circle cx="128" cy="102" r="8"  fill="#3fd68c"/>
+  <g stroke="#cfeede" stroke-width="3" stroke-linecap="round">
+    <line x1="128" y1="180" x2="128" y2="196"/>
+    <line x1="120" y1="188" x2="136" y2="188"/>
+  </g>
+</svg>
