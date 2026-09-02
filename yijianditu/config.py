@@ -12,7 +12,8 @@ import sys
 # ── 天地图公开 Token（与 geo-downloader 内置默认值一致，可用环境变量覆盖）──
 # 运行时可由界面修改（set_tianditu_token），URL 模板用 {tk} 占位符，下载时注入。
 # 用户填入的 Key 会持久化到本地文件，下次启动自动回填（记住上次输入）。
-TIANDITU_TOKEN = os.environ.get("TIANDITU_TOKEN", "436ce7e50d27eede2f2929307e6b33c0")
+PUBLIC_TIANDITU_TOKEN = os.environ.get("TIANDITU_PUBLIC_TOKEN", "436ce7e50d27eede2f2929307e6b33c0")
+TIANDITU_TOKEN = os.environ.get("TIANDITU_TOKEN", PUBLIC_TIANDITU_TOKEN)
 
 # Key 持久化文件（用户主目录下隐藏文件，仅本机使用）
 TIANDITU_TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".yijianditu_token")
@@ -36,6 +37,13 @@ def set_tianditu_token(token: str) -> None:
     global TIANDITU_TOKEN
     token = (token or "").strip()
     if not token:
+        # 空输入表示恢复内置公共 Key，同时清掉本机旧记忆，避免下次再次误用。
+        TIANDITU_TOKEN = PUBLIC_TIANDITU_TOKEN
+        try:
+            if os.path.isfile(TIANDITU_TOKEN_FILE):
+                os.remove(TIANDITU_TOKEN_FILE)
+        except Exception:
+            pass
         return
     TIANDITU_TOKEN = token
     _save_token_file(token)
@@ -51,8 +59,13 @@ def _save_token_file(token: str) -> None:
 
 
 def current_tianditu_token() -> str:
-    """当前生效的天地图 Token（供 /api/config 回显）"""
+    """当前生效的天地图 Token（供服务端下载使用）"""
     return TIANDITU_TOKEN
+
+
+def reset_tianditu_token() -> None:
+    """恢复内置公共 Key，并清理本机记忆 Key"""
+    set_tianditu_token("")
 
 
 _load_token_file()  # 模块加载即生效

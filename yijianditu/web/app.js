@@ -84,6 +84,16 @@
     ['cmDeg', 'cmMin', 'cmSec'].forEach((id) => {
       $(id).addEventListener('input', refreshEstimate);
     });
+    const tkInput = $('tkInput');
+    if (tkInput) {
+      let tkTimer = null;
+      tkInput.addEventListener('input', () => {
+        clearTimeout(tkTimer);
+        tkTimer = setTimeout(() => {
+          if (state.source === 'tianditu_satellite') swapBaseLayer();
+        }, 500);
+      });
+    }
     $('crsManual').style.display = state.crsMode === 'cm' ? '' : 'none';
     if (state.crsMode === 'cm') syncManualDefault();
   }
@@ -165,7 +175,15 @@
 
   /* ── 地图 ─────────────────────────────────────────────── */
   function tileUrl(srcId, layer) {
-    return `/api/tile?src=${srcId}&layer=${layer}&z={z}&x={x}&y={y}`;
+    // 天地图预览直接由浏览器请求：浏览器类型 Key 可正常使用，避免
+    // 本地 Python 代理把浏览器 Key 当作服务端请求而被天地图拒绝。
+    if (srcId === 'tianditu_satellite') {
+      const input = $('tkInput');
+      const token = (input && input.value || '').trim() || '436ce7e50d27eede2f2929307e6b33c0';
+      const path = layer === 'label' ? 'cia_w' : 'img_w';
+      return `https://t{s}.tianditu.gov.cn/${path}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer === 'label' ? 'cia' : 'img'}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${encodeURIComponent(token)}`;
+    }
+    return `/api/tile?src=${encodeURIComponent(srcId)}&layer=${encodeURIComponent(layer)}&z={z}&x={x}&y={y}`;
   }
 
   function initMap() {
@@ -185,17 +203,19 @@
     if (state.baseLayer) map.removeLayer(state.baseLayer);
     if (state.labelLayer) { map.removeLayer(state.labelLayer); state.labelLayer = null; }
 
-    state.baseLayer = L.tileLayer(tileUrl(src.id, 'base'), {
+    // 必须把数字子域（天地图 0~7）传给 Leaflet，否则默认 a/b/c 字母子域
+    // 会被天地图拒绝（t{s} → ta/tb/tc 无法解析），瓦片全黑。
+    const opts = {
       maxZoom: 19,
       maxNativeZoom: src.max_zoom,
       attribution: src.attribution,
-    }).addTo(map);
+    };
+    if (src.subdomains && src.subdomains.length) opts.subdomains = src.subdomains;
+
+    state.baseLayer = L.tileLayer(tileUrl(src.id, 'base'), opts).addTo(map);
 
     if (src.has_label) {
-      state.labelLayer = L.tileLayer(tileUrl(src.id, 'label'), {
-        maxZoom: 19,
-        maxNativeZoom: src.max_zoom,
-      }).addTo(map);
+      state.labelLayer = L.tileLayer(tileUrl(src.id, 'label'), opts).addTo(map);
     }
   }
 
@@ -296,7 +316,9 @@
       max_lon: state.bbox[2], max_lat: state.bbox[3],
       zoom: state.zoom, source: state.source,
       crs_mode: crs.crs_mode,
-      tianditu_token: token || undefined,
+      // 天地图留空时显式传空字符串，让服务端恢复内置公共 Key，
+      // 不再沿用历史失效的本机记忆 Key。
+      tianditu_token: state.source === 'tianditu_satellite' ? token : undefined,
     };
     if (crs.manual_meridian !== undefined) body.manual_meridian = crs.manual_meridian;
     const info = await fetch('/api/estimate', {
@@ -349,7 +371,8 @@
       max_lon: state.bbox[2], max_lat: state.bbox[3],
       zoom: state.zoom, source: state.source,
       crs_mode: crs.crs_mode,
-      tianditu_token: token || undefined,
+      // 下载时同样显式传空字符串，恢复内置公共 Key。
+      tianditu_token: state.source === 'tianditu_satellite' ? token : undefined,
       output_dir: $('outDir').value.trim(),
       name: $('fileName').value.trim(),
     };

@@ -268,6 +268,10 @@ class Handler(BaseHTTPRequestHandler):
                 "max_zoom": s["max_zoom"],
                 "attribution": s["attribution"],
                 "has_label": bool(s.get("label_url")),
+                # 子域列表：天地图用数字 0~7（t0~t7），ArcGIS 无子域。
+                # 必须下发，前端据此传给 Leaflet，否则 Leaflet 默认用 a/b/c
+                # 字母子域，t{s} 会变成 ta/tb/tc，天地图不认 → 瓦片全黑。
+                "subdomains": s.get("subdomains", []),
             }
             for s in SOURCES.values()
         ]
