@@ -25,6 +25,10 @@
     state.cfg = cfg;
     state.source = cfg.default_source;
     state.crsMode = cfg.crs_default_mode || 'zone';
+    if (cfg.crs_default_manual_meridian) {
+      state.crsMode = 'cm';
+      window.__defaultMeridian = cfg.crs_default_manual_meridian;
+    }
     state.zoom = cfg.default_zoom;
 
     $('outDir').value = cfg.output_dir;
@@ -40,6 +44,7 @@
     syncZoomUI();
     startHeartbeat();
     bindUnload();
+    applyDefaultManual();
   }
 
   function renderSourceTabs() {
@@ -94,9 +99,30 @@
         }, 500);
       });
     }
-    $('crsManual').style.display = state.crsMode === 'cm' ? '' : 'none';
-    if (state.crsMode === 'cm') syncManualDefault();
-  }
+      $('crsManual').style.display = state.crsMode === 'cm' ? '' : 'none';
+      if (state.crsMode === 'cm') syncManualDefault();
+    }
+
+    function applyDefaultManual() {
+      const m = window.__defaultMeridian;
+      if (!m) return;
+      const chk = $('cmManualChk');
+      if (chk) {
+        chk.checked = true;
+        ['cmDeg', 'cmMin', 'cmSec'].forEach((id) => { $(id).disabled = false; });
+      }
+      const deg = Math.floor(m);
+      const minFrac = (m - deg) * 60;
+      const mins = Math.floor(minFrac);
+      const secs = Math.round((minFrac - mins) * 3600);
+      $('cmDeg').value = deg;
+      $('cmMin').value = mins;
+      $('cmSec').value = secs;
+      $('crsManual').style.display = '';
+      document.querySelectorAll('#crsModeTabs .tab')
+        .forEach((t) => t.classList.toggle('on', t.dataset.mode === 'cm'));
+      refreshEstimate();
+    }
 
   function syncManualDefault() {
     // 未手动填写时，把自动识别的中央经线（度）预填到度框
