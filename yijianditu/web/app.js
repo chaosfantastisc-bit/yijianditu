@@ -1,4 +1,4 @@
-/* 一键地图 前端逻辑：底图预览（走本地代理）+ 拉框选区 + 任务轮询 */
+/* 一键地图 前端逻辑：底图预览、拉框选区和任务进度 */
 (() => {
   'use strict';
 
@@ -6,13 +6,16 @@
   const state = {
     cfg: null,
     source: null,
-    crsMode: 'zone',    // 坐标系模式：zone(加带号) / cm(不加带号)
+    crsMode: 'zone',
     zoom: 17,
     bbox: null,        // [minLon, minLat, maxLon, maxLat]
     rect: null,        // L.Rectangle
     drawing: false,
     taskId: null,
     timer: null,
+    polling: false,
+    starting: false,
+    exited: false,
     baseLayer: null,
     labelLayer: null,
   };
@@ -24,17 +27,14 @@
     const cfg = await fetch('/api/config').then((r) => r.json());
     state.cfg = cfg;
     state.source = cfg.default_source;
-    state.crsMode = cfg.crs_default_mode || 'zone';
-    if (cfg.crs_default_manual_meridian) {
-      state.crsMode = 'cm';
-      window.__defaultMeridian = cfg.crs_default_manual_meridian;
-    }
+    const initialMode = cfg.crs_default_manual_meridian ? 'manual' : (cfg.crs_default_mode || 'zone');
     state.zoom = cfg.default_zoom;
 
     $('outDir').value = cfg.output_dir;
+    if (cfg.tianditu_token !== cfg.tianditu_public_token) $('tkInput').value = cfg.tianditu_token;
     updateTkVisibility();
     $('crsNote').textContent = cfg.crs_note || '';
-    const modeName = state.crsMode === 'zone' ? '加带号 Zone' : '不加带号 CM';
+    const modeName = {zone: '加带号 Zone', cm: '不加带号 CM', manual: '手动设置'}[initialMode];
     $('foot').textContent = `v${cfg.version} · 默认 ${modeName} · JPG ≤ ${cfg.limits.jpg_max_mb}MB`;
 
     renderSourceTabs();
@@ -42,9 +42,13 @@
     initMap();
     bindEvents();
     syncZoomUI();
-    startHeartbeat();
-    bindUnload();
-    applyDefaultManual();
+    if (cfg.crs_default_manual_meridian) setManualMeridian(cfg.crs_default_manual_meridian);
+    setCrsMode(initialMode);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) poll();
+    });
+    window.addEventListener('pageshow', (e) => { if (e.persisted) poll(); });
+    poll();
   }
 
   function renderSourceTabs() {
@@ -66,26 +70,13 @@
 
   // ── 坐标系（自动按 3°带分带）─────────────────────────────
   function setupCrsUI() {
+    $('cmPresetBtn').onclick = () => {
+      setManualMeridian(state.cfg.crs_manual_preset || 118.5);
+      refreshEstimate();
+    };
     document.querySelectorAll('#crsModeTabs .tab').forEach((el) => {
-      el.onclick = () => {
-        state.crsMode = el.dataset.mode;
-        document.querySelectorAll('#crsModeTabs .tab')
-          .forEach((t) => t.classList.toggle('on', t === el));
-        const isCm = state.crsMode === 'cm';
-        $('crsManual').style.display = isCm ? '' : 'none';
-        if (isCm) syncManualDefault();
-        refreshEstimate();
-      };
+      el.onclick = () => setCrsMode(el.dataset.mode);
     });
-    const chk = $('cmManualChk');
-    if (chk) {
-      chk.onchange = () => {
-        const on = chk.checked;
-        ['cmDeg', 'cmMin', 'cmSec'].forEach((id) => { $(id).disabled = !on; });
-        if (on) syncManualDefault();
-        refreshEstimate();
-      };
-    }
     ['cmDeg', 'cmMin', 'cmSec'].forEach((id) => {
       $(id).addEventListener('input', refreshEstimate);
     });
@@ -99,50 +90,46 @@
         }, 500);
       });
     }
-      $('crsManual').style.display = state.crsMode === 'cm' ? '' : 'none';
-      if (state.crsMode === 'cm') syncManualDefault();
-    }
+  }
 
-    function applyDefaultManual() {
-      const m = window.__defaultMeridian;
-      if (!m) return;
-      const chk = $('cmManualChk');
-      if (chk) {
-        chk.checked = true;
-        ['cmDeg', 'cmMin', 'cmSec'].forEach((id) => { $(id).disabled = false; });
-      }
-      const deg = Math.floor(m);
-      const minFrac = (m - deg) * 60;
-      const mins = Math.floor(minFrac);
-      const secs = Math.round((minFrac - mins) * 3600);
-      $('cmDeg').value = deg;
-      $('cmMin').value = mins;
-      $('cmSec').value = secs;
-      $('crsManual').style.display = '';
-      document.querySelectorAll('#crsModeTabs .tab')
-        .forEach((t) => t.classList.toggle('on', t.dataset.mode === 'cm'));
-      refreshEstimate();
-    }
+  function bandForLongitude(lon) {
+    const [first, last] = state.cfg.crs_zone_range;
+    if (lon < first * 3 - 1.5 || lon > last * 3 + 1.5) return null;
+    return Math.min(last, Math.floor((lon + 1.5) / 3));
+  }
 
-  function syncManualDefault() {
-    // 未手动填写时，把自动识别的中央经线（度）预填到度框
-    const b = state.bbox;
-    if (!b || $('cmDeg').value) return;
-    const zone = Math.min(Math.floor((b[0] + 1.5) / 3), Math.floor((b[2] + 1.5) / 3));
-    $('cmDeg').value = 3 * zone;
+  function setCrsMode(mode) {
+    if (mode === 'manual' && (state.crsMode === 'cm' || $('cmDeg').value === '')) {
+      const zone = state.bbox ? bandForLongitude(state.bbox[0]) : null;
+      const defaultZone = Number(state.cfg.default_target.split(':')[1]) || 39;
+      setManualMeridian(3 * (zone ?? defaultZone));
+    }
+    state.crsMode = mode;
+    $('crsManual').style.display = mode === 'manual' ? '' : 'none';
+    $('crsNote').style.display = mode === 'manual' ? 'none' : '';
+    document.querySelectorAll('#crsModeTabs .tab').forEach((tab) => {
+      const selected = tab.dataset.mode === mode;
+      tab.classList.toggle('on', selected);
+      tab.setAttribute('aria-pressed', String(selected));
+    });
+    refreshEstimate();
+  }
+
+  function setManualMeridian(meridian) {
+    const ticks = Math.round(meridian * 360000);
+    $('cmDeg').value = Math.floor(ticks / 360000);
+    $('cmMin').value = Math.floor((ticks % 360000) / 6000);
+    $('cmSec').value = (ticks % 6000) / 100;
   }
 
   function computeCrsParams() {
-    if (state.crsMode === 'zone') return { crs_mode: 'zone' };
-    const chk = $('cmManualChk');
-    if (chk && chk.checked) {
-      const d = parseFloat($('cmDeg').value) || 0;
-      const m = parseFloat($('cmMin').value) || 0;
-      const s = parseFloat($('cmSec').value) || 0;
-      const dec = d + m / 60 + s / 3600;
-      if (dec > 0) return { crs_mode: 'manual', manual_meridian: dec };
-    }
-    return { crs_mode: 'cm' };
+    if (state.crsMode !== 'manual') return { crs_mode: state.crsMode };
+    const degrees = $('cmDeg').value;
+    const d = Number(degrees), m = Number($('cmMin').value), s = Number($('cmSec').value);
+    const meridian = d + m / 60 + s / 3600;
+    if (degrees === '' || !Number.isInteger(d) || d < 0 || !Number.isInteger(m) ||
+        m < 0 || m >= 60 || !(s >= 0 && s < 60 && meridian > 0 && meridian < 180)) return null;
+    return { crs_mode: 'manual', manual_meridian: meridian };
   }
 
   function updateCrsInfo() {
@@ -153,28 +140,31 @@
       return;
     }
     const [minLon, , maxLon] = state.bbox;
-    if (minLon < 73.5 || maxLon > 136.5) {
+    const z1 = bandForLongitude(minLon);
+    const z2 = bandForLongitude(maxLon);
+    if (z1 === null || z2 === null) {
       info.className = 'crs-info warn';
       info.textContent = '⚠ 选择区域超出范围（仅支持 3°带 第25~45带 / 中央经线 75°E~135°E）';
       return;
     }
-    const z1 = Math.floor((minLon + 1.5) / 3);
-    const z2 = Math.floor((maxLon + 1.5) / 3);
     const cross = z1 !== z2;
-    const zone = Math.min(z1, z2);
+    const zone = z1;
     const meridian = 3 * zone;
     let txt;
     if (state.crsMode === 'zone') {
       txt = `将使用: CGCS2000_3_Degree_GK_Zone_${zone}（中央经线 ${meridian}°E，含带号）`;
-    } else if ($('cmManualChk') && $('cmManualChk').checked) {
-      const d = parseFloat($('cmDeg').value) || 0;
-      const m = parseFloat($('cmMin').value) || 0;
-      const s = parseFloat($('cmSec').value) || 0;
-      txt = `将使用: CGCS2000_3_Degree_GK_CM_${(d + m / 60 + s / 3600).toFixed(4)}E（手动中央经线）`;
+    } else if (state.crsMode === 'manual') {
+      const manual = computeCrsParams();
+      if (!manual) {
+        info.className = 'crs-info warn';
+        info.textContent = '请输入有效的中央子午线';
+        return;
+      }
+      txt = `将使用: CGCS2000_3_Degree_GK_CM_${manual.manual_meridian.toFixed(4)}E（手动中央经线）`;
     } else {
       txt = `将使用: CGCS2000_3_Degree_GK_CM_${meridian}E（中央经线 ${meridian}°E）`;
     }
-    if (cross) txt += '  ⚠ 横跨多带，已取小编号';
+    if (cross && state.crsMode !== 'manual') txt += '  ⚠ 横跨多带，已取小编号';
     info.className = 'crs-info';
     info.textContent = txt;
   }
@@ -205,11 +195,15 @@
     // 本地 Python 代理把浏览器 Key 当作服务端请求而被天地图拒绝。
     if (srcId === 'tianditu_satellite') {
       const input = $('tkInput');
-      const token = (input && input.value || '').trim() || '436ce7e50d27eede2f2929307e6b33c0';
+      const token = (input && input.value || '').trim() || state.cfg.tianditu_public_token;
       const path = layer === 'label' ? 'cia_w' : 'img_w';
       return `https://t{s}.tianditu.gov.cn/${path}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer === 'label' ? 'cia' : 'img'}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${encodeURIComponent(token)}`;
     }
-    return `/api/tile?src=${encodeURIComponent(srcId)}&layer=${encodeURIComponent(layer)}&z={z}&x={x}&y={y}`;
+    return currentSource().preview_url || proxyTileUrl(srcId, layer);
+  }
+
+  function proxyTileUrl(srcId, layer) {
+    return `/api/tile?src=${encodeURIComponent(srcId)}&layer=${layer}&z={z}&x={x}&y={y}`;
   }
 
   function initMap() {
@@ -238,7 +232,18 @@
     };
     if (src.subdomains && src.subdomains.length) opts.subdomains = src.subdomains;
 
-    state.baseLayer = L.tileLayer(tileUrl(src.id, 'base'), opts).addTo(map);
+    if (src.preview_url) opts.updateWhenIdle = true;
+    state.baseLayer = L.tileLayer(tileUrl(src.id, 'base'), opts);
+    if (src.preview_url) {
+      const layer = state.baseLayer;
+      const fallback = proxyTileUrl(src.id, 'base');
+      layer.on('tileerror', ({ tile, coords }) => {
+        if (tile.dataset.proxyFallback || layer !== state.baseLayer) return;
+        tile.dataset.proxyFallback = '1';
+        tile.src = L.Util.template(fallback, coords);
+      });
+    }
+    state.baseLayer.addTo(map);
 
     if (src.has_label) {
       state.labelLayer = L.tileLayer(tileUrl(src.id, 'label'), opts).addTo(map);
@@ -280,7 +285,8 @@
       const dy = Math.abs(b.getNorth() - b.getSouth());
       if (dx < 1e-6 || dy < 1e-6) { refreshEstimate(); return; }
       applyBBox([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], false);
-      clearTimeout(estTimer); doEstimate();   // 框选完成立即预估，不等防抖
+      clearTimeout(estTimer);
+      doEstimate(estimateRevision);
     };
     map.on('mousemove', move);
     map.on('mouseup', up);
@@ -318,13 +324,18 @@
 
   /* ── 规模预估 ─────────────────────────────────────────── */
   let estTimer = null;
+  let estimateRevision = 0;
+  let estimateValid = false;
   function refreshEstimate() {
     updateCrsInfo();
     clearTimeout(estTimer);
-    estTimer = setTimeout(doEstimate, 80);
+    const revision = ++estimateRevision;
+    estimateValid = false;
+    $('startBtn').disabled = true;
+    estTimer = setTimeout(() => doEstimate(revision), 120);
   }
 
-  async function doEstimate() {
+  async function doEstimate(revision) {
     const src = currentSource();
     $('zoomHint').textContent = `${src.name} 支持 ${src.min_zoom}~${src.max_zoom} 级`;
     if (!state.bbox) {
@@ -336,20 +347,18 @@
       return;
     }
     const crs = computeCrsParams();
-    const token = state.source === 'tianditu_satellite' ? (($('tkInput').value || '').trim()) : '';
+    if (!crs) return;
     const body = {
       min_lon: state.bbox[0], min_lat: state.bbox[1],
       max_lon: state.bbox[2], max_lat: state.bbox[3],
       zoom: state.zoom, source: state.source,
       crs_mode: crs.crs_mode,
-      // 天地图留空时显式传空字符串，让服务端恢复内置公共 Key，
-      // 不再沿用历史失效的本机记忆 Key。
-      tianditu_token: state.source === 'tianditu_satellite' ? token : undefined,
     };
     if (crs.manual_meridian !== undefined) body.manual_meridian = crs.manual_meridian;
     const info = await fetch('/api/estimate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }).then((r) => r.json()).catch(() => null);
+    if (revision !== estimateRevision) return;
 
     if (!info || info.error) {
       if (info && info.out_of_range) {
@@ -375,7 +384,8 @@
       $('startBtn').disabled = true;
     } else {
       $('estWarn').classList.remove('show');
-      $('startBtn').disabled = false;
+      estimateValid = true;
+      $('startBtn').disabled = state.starting;
     }
   }
 
@@ -389,8 +399,9 @@
 
   /* ── 下载任务 ─────────────────────────────────────────── */
   async function start() {
-    if (!state.bbox) return;
+    if (!estimateValid || !state.bbox || state.starting || state.taskId) return;
     const crs = computeCrsParams();
+    if (!crs) return;
     const token = state.source === 'tianditu_satellite' ? (($('tkInput').value || '').trim()) : '';
     const body = {
       min_lon: state.bbox[0], min_lat: state.bbox[1],
@@ -403,37 +414,82 @@
       name: $('fileName').value.trim(),
     };
     if (crs.manual_meridian !== undefined) body.manual_meridian = crs.manual_meridian;
-    const res = await fetch('/api/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    }).then((r) => r.json());
+    state.starting = true;
+    $('startBtn').disabled = true;
+    $('exitBtn').disabled = true;
+    try {
+      const res = await post('/api/download', body);
+      state.taskId = res.task_id;
+      $('resultBlock').style.display = 'none';
+      $('pbarFill').style.width = '0%';
+      $('pmsg').textContent = '准备下载…';
+      $('plog').textContent = '';
+      showTask(true);
+    } catch (e) {
+      showTask(false);
+      alert(e.message);
+    } finally {
+      state.starting = false;
+      $('startBtn').disabled = !estimateValid;
+      poll();
+    }
+  }
 
-    if (res.error) { alert(res.error); return; }
+  async function post(url, body = {}) {
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
+    });
+    const data = await r.json();
+    if (!r.ok && !data.already_running) throw new Error(data.error || '请求失败');
+    return data;
+  }
 
-    state.taskId = res.task_id;
-    $('progressBlock').style.display = 'flex';
-    $('resultBlock').style.display = 'none';
-    $('startBtn').style.display = 'none';
-    $('cancelBtn').style.display = 'block';
-    $('plog').textContent = '';
-    state.timer = setInterval(poll, 400);
+  function showTask(running) {
+    $('startBtn').style.display = running ? 'none' : 'block';
+    $('cancelBtn').style.display = running ? 'block' : 'none';
+    $('exitBtn').disabled = running;
+    if (running) $('progressBlock').style.display = 'flex';
   }
 
   async function poll() {
-    if (!state.taskId) return;
-    const t = await fetch('/api/task?id=' + state.taskId).then((r) => r.json()).catch(() => null);
-    if (!t || t.error) return;
+    if (state.polling || state.starting || state.exited) return;
+    clearTimeout(state.timer);
+    const id = state.taskId;
+    state.polling = true;
+    let delay = 700;
+    try {
+      const r = await fetch(id ? '/api/task?id=' + encodeURIComponent(id) : '/api/task', {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!r.ok && r.status !== 404) throw new Error('读取进度失败');
+      const t = await r.json();
+      if (state.exited || state.starting || state.taskId !== id) return;
+      if (!t || t.error) {
+        state.taskId = null;
+        showTask(false);
+        if (id) $('pmsg').textContent = t?.error || '任务不存在';
+        return;
+      }
+      renderTask(t);
+    } catch (e) {
+      if (state.taskId && !state.exited) $('pmsg').textContent = '暂时无法获取进度，正在重连…';
+      delay = 1800;
+    } finally {
+      state.polling = false;
+      if (state.taskId && !state.starting && !state.exited) state.timer = setTimeout(poll, delay);
+    }
+  }
 
+  function renderTask(t) {
+    const running = t.status === 'running';
+    state.taskId = running ? t.id : null;
+    showTask(running);
+    $('progressBlock').style.display = 'flex';
     $('pbarFill').style.width = t.progress + '%';
     $('pmsg').textContent = t.message;
     $('plog').textContent = (t.logs || []).join('\n');
     $('plog').scrollTop = $('plog').scrollHeight;
-
-    if (t.status === 'running') return;
-
-    clearInterval(state.timer);
-    state.timer = null;
-    $('startBtn').style.display = 'block';
-    $('cancelBtn').style.display = 'none';
 
     if (t.status === 'done') {
       const r = t.result;
@@ -450,17 +506,39 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: r.dxf_path }),
       });
-    } else if (t.status === 'error') {
-      alert('下载失败：' + (t.result ? t.result.error : t.message));
+    } else {
+      $('resultBlock').style.display = 'none';
     }
   }
 
   async function cancel() {
     if (!state.taskId) return;
-    await fetch('/api/cancel', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.taskId }),
-    });
+    $('cancelBtn').disabled = true;
+    try {
+      await post('/api/cancel', { id: state.taskId });
+      poll();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      $('cancelBtn').disabled = false;
+    }
+  }
+
+  async function exit() {
+    $('exitBtn').disabled = true;
+    try {
+      await post('/api/exit');
+      state.exited = true;
+      clearTimeout(state.timer);
+      const message = document.createElement('p');
+      message.textContent = '程序已退出。双击 EXE 可重新打开。';
+      message.style.padding = '24px';
+      document.body.replaceChildren(message);
+    } catch (e) {
+      $('exitBtn').disabled = false;
+      alert(e.message);
+      poll();
+    }
   }
 
   /* ── 事件绑定 ─────────────────────────────────────────── */
@@ -485,6 +563,7 @@
     });
     $('startBtn').onclick = start;
     $('cancelBtn').onclick = cancel;
+    $('exitBtn').onclick = exit;
     $('openDirBtn').onclick = () => fetch('/api/open', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: $('outDir').value.trim() }),
@@ -495,36 +574,7 @@
     });
   }
 
-  /* ── 关闭网页即退出（避免后台进程残留）────────────────── */
-  function startHeartbeat() {
-    const ping = () => {
-      fetch('/api/ping', { keepalive: true }).catch(() => {});
-    };
-    ping();
-    setInterval(ping, 5000);   // 页面开着就持续刷新活动，关闭后停发
-  }
-
-  function notifyClose() {
-    // sendBeacon 专为「页面卸载」设计，比 unload 时的 fetch 可靠
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon('/api/close', new Blob(['{}'], { type: 'application/json' }));
-        return;
-      }
-    } catch (e) { /* ignore */ }
-    fetch('/api/close', {
-      method: 'POST', keepalive: true,
-      headers: { 'Content-Type': 'application/json' }, body: '{}',
-    }).catch(() => {});
-  }
-
-  function bindUnload() {
-    // pagehide 在关闭标签/导航时触发；切到别的标签不会触发，避免误杀
-    window.addEventListener('pagehide', notifyClose);
-    window.addEventListener('beforeunload', notifyClose);
-  }
-
   init().catch((e) => {
-    document.body.innerHTML = `<pre style="padding:24px;color:#f2685f">初始化失败：${e}</pre>`;
+    document.body.textContent = `初始化失败：${e.message}`;
   });
 })();

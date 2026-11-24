@@ -6,6 +6,19 @@
 
 ---
 
+## ⬇️ 下载
+
+最新版本：**[v2.0.1 · Windows 原生版](https://github.com/chaosfantastisc-bit/yijianditu/releases/latest)**
+
+| 文件 | 说明 |
+| --- | --- |
+| `一键下载卫星图到CAD（Windows原生版）.exe` | **推荐**。单文件 300 KB，免安装 Python、免装依赖，双击即用（Windows x64 / .NET Framework 4.8，Win10/11 自带） |
+| `一键下载卫星图到CAD（Windows原生版）-2.0.1-源码.zip` | 原生版完整源码（C# + 内嵌 Leaflet 前端 + DXF 模板） |
+
+> 需要 Python 版？见下方「方式一：源码运行」。
+
+---
+
 ## ✨ 功能特性
 
 - **地图拉框选区**：Leaflet 网页地图，鼠标拖拽框选下载范围，实时预估瓦片数与像素量。
@@ -26,8 +39,8 @@
 - **输出 DXF + JPG**：
   - JPG 为裁剪后的影像
   - DXF 内以**完整绝对路径**引用 JPG，CAD 打开即见底图，四角写入投影坐标实现配准
-- **干净退出**：关闭网页后后台进程自动退出（前端心跳 + 卸载时关闭信号 + 空闲超时兜底），不残留进程。
-- **性能优化**：瓦片下载使用连接池复用 TCP/TLS；重投影默认 cubic 重采样；进度全程平滑无空窗。
+- **后台下载**：切换标签、刷新或关闭网页后，下载继续。双击同版 EXE 可重新打开页面并查看最近的任务。使用完毕后，点击网页左下方的「退出程序」结束后台服务。
+- **性能优化**：ArcGIS 预览优先由浏览器直连，失败的瓦片回退到本地转发；批量下载复用连接并限制待处理瓦片数量。重投影继续使用 cubic 重采样。
 
 ---
 
@@ -47,18 +60,31 @@ python -m yijianditu --port 17800 --no-browser
 ### 方式二：打包单文件 exe
 
 ```bash
-build_exe.bat        # 生成 dist\yijianditu.exe（--onefile --noconsole）
+build_exe.bat        # 从当前 Python 环境打包两个单文件 EXE 到 dist
 ```
 
-双击 `yijianditu.exe` 即可，无需安装 Python 环境。
+安装 PyInstaller 和上述依赖后运行打包脚本。也可用 `build_exe.bat "C:\路径\python.exe"` 指定解释器。
+双击成品即可运行。自动版默认使用三度带加带号坐标系，118.5 版默认使用手动中央子午线 118°30′E。
+EXE 的运行日志位于 `%LOCALAPPDATA%\一键地图`。
+
+### 方式三：Windows 原生版（C#，无需 Python）
+
+源码位于 [`native/`](native/)，用系统自带的 .NET Framework C# 编译器构建：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\native\build.ps1
+```
+
+控件与算法要点见 [`native/README.md`](native/README.md)。运行日志位于
+`%LOCALAPPDATA%\一键地图\运行-原生版.log`。
 
 ---
 
 ## 🧱 技术栈
 
-- 后端：Python / `http.server` 轻量服务
-- 坐标与栅格：`rasterio` + `pyproj`（动态构造 CGCS2000 三度带 CRS）
-- CAD 输出：`ezdxf`
+- 后端：Python / `http.server` 轻量服务；原生版为 .NET Framework C#（`HttpListener`）
+- 坐标与栅格：`rasterio` + `pyproj`（动态构造 CGCS2000 三度带 CRS）；原生版为 GRS80 椭球六阶 Krüger 级数
+- CAD 输出：`ezdxf`；原生版为内嵌 DXF 模板写入
 - 影像处理：`Pillow` + `numpy`
 - 瓦片下载：`requests` 连接池
 - 前端：Leaflet + 原生 JS / CSS

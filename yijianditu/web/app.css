@@ -87,9 +87,11 @@ html, body {
 }
 .crs-info.warn { color: var(--warn); border-color: rgba(240,180,94,.45); background: rgba(240,180,94,.08); }
 .crs-manual { display: flex; flex-direction: column; gap: 6px; }
+.crs-manual-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
 .dms { display: flex; gap: 5px; }
 .dms input { flex: 1; min-width: 0; }
-.crs-manual label span { display: flex; align-items: center; gap: 6px; color: var(--txt-dim); font-size: 11.5px; }
+#crsModeTabs button { color: inherit; font-family: inherit; white-space: nowrap; }
+#crsModeTabs button.on { color: #cdeeff; }
 
 /* 图源标签 */
 .tabs { display: flex; gap: 8px; }
@@ -230,7 +232,7 @@ input.grow { flex: 1; min-width: 0; }
 .ok-title { color: var(--ok); font-weight: 700; }
 .res-line { font-size: 11.5px; color: #b7c6d4; line-height: 1.6; word-break: break-all; }
 
-.foot { margin-top: auto; color: #55636f; font-size: 10.5px; line-height: 1.5; }
+.foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8797a5; font-size: 10.5px; line-height: 1.5; }
 
 /* ── 地图 ─────────────────────────────────────────────── */
 #mapWrap { flex: 1; position: relative; }
