@@ -12,8 +12,8 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `一键下载卫星图到CAD（Windows原生版）.exe` | **推荐**。单文件 300 KB，免安装 Python、免装依赖，双击即用（Windows x64 / .NET Framework 4.8，Win10/11 自带） |
-| `一键下载卫星图到CAD（Windows原生版）-2.0.1-源码.zip` | 原生版完整源码（C# + 内嵌 Leaflet 前端 + DXF 模板） |
+| [`yijianditu-2.0.1-win-x64.exe`](https://github.com/chaosfantastisc-bit/yijianditu/releases/latest/download/yijianditu-2.0.1-win-x64.exe) | **推荐**。单文件 298 KB，免安装 Python、免装依赖，双击即用（Windows x64 / .NET Framework 4.8，Win10/11 自带） |
+| [`yijianditu-2.0.1-source.zip`](https://github.com/chaosfantastisc-bit/yijianditu/releases/latest/download/yijianditu-2.0.1-source.zip) | 原生版完整源码（C# + 内嵌 Leaflet 前端 + DXF 模板） |
 
 > 需要 Python 版？见下方「方式一：源码运行」。
 
